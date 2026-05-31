@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Download the release artifact for the requested version into
+# ASDF_DOWNLOAD_PATH. Resolution is dynamic: the matching asset is discovered
+# from the GitHub release rather than templated, because upstream asset names
+# are not predictable from the version alone.
+#
+# Upstream publishes no per-asset checksums, so there is nothing to verify
+# beyond the HTTPS transport and HTTP status (curl -f). See bin/help.config.
+set -euo pipefail
+
+plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/utils.sh
+. "${plugin_dir}/lib/utils.sh"
+
+[ "${ASDF_INSTALL_TYPE:-version}" = "version" ] ||
+  fail "only released versions are installable; 'ref' installs are not supported"
+
+version="${ASDF_INSTALL_VERSION:?ASDF_INSTALL_VERSION is required}"
+download_path="${ASDF_DOWNLOAD_PATH:?ASDF_DOWNLOAD_PATH is required}"
+
+os="$(prusaslicer_current_os)" || fail "unsupported operating system: $(uname -s) (supported: Linux, macOS)"
+arch="$(prusaslicer_current_arch)" || fail "unsupported architecture: $(uname -m) (supported: x86_64, arm64)"
+
+url="$(prusaslicer_resolve_asset_url "${version}" "${os}" "${arch}" 2>/dev/null || true)"
+if [ -z "${url}" ]; then
+  case "${os}" in
+    linux)
+      fail "no PrusaSlicer ${version} build for linux/${arch}. Upstream ships Linux binaries on GitHub only through 2.8.1 (x86_64) and 2.7.4 (arm64); 2.9.0+ is distributed for Linux via Flatpak. Choose a supported version: asdf list all prusaslicer"
+      ;;
+    *)
+      fail "no PrusaSlicer ${version} build for ${os}/${arch}"
+      ;;
+  esac
+fi
+
+mkdir -p "${download_path}"
+artifact="${download_path}/$(basename "${url}")"
+
+prusaslicer_download_to "${url}" "${artifact}" ||
+  fail "failed to download ${url}"

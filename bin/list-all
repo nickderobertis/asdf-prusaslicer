@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Print every installable PrusaSlicer version as a single space-separated line,
+# oldest first and newest last, as asdf expects. Only final stable releases are
+# listed; prereleases (-alpha/-beta/-rc) are intentionally excluded.
+set -euo pipefail
+
+plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/utils.sh
+. "${plugin_dir}/lib/utils.sh"
+
+versions="$(prusaslicer_list_all_versions || true)"
+[ -n "${versions}" ] ||
+  fail "could not retrieve PrusaSlicer versions from GitHub (check connectivity; set GITHUB_API_TOKEN if rate limited)"
+
+# Collapse the newline-separated list into the space-separated form asdf wants.
+# shellcheck disable=SC2086 # deliberate word splitting; versions are bare tokens.
+echo ${versions}

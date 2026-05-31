@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# Runtime dependencies, shown by `asdf help prusaslicer`.
+set -euo pipefail
+
+cat <<'EOF'
+This plugin installs prebuilt binaries; no compiler or source build is required.
+
+Tools used by the plugin scripts:
+  * bash, curl, find, grep, sed, sort  (all platforms)
+  * macOS:  hdiutil                     (mount the .dmg; ships with macOS)
+  * Linux:  bzip2, tar                  (unpack tarball releases)
+
+Runtime libraries:
+  * macOS:  none beyond the system; the .app bundle is self-contained.
+  * Linux:  the AppImage/tarball builds bundle most libraries but rely on the
+            system to provide WebKitGTK and OpenGL. These load at process start,
+            so they are required even for `--help`. On Debian/Ubuntu:
+              sudo apt-get install libwebkit2gtk-4.1-0 libgl1 libegl1
+            (This unbundled WebKit dependency is why upstream moved Linux
+            distribution to Flatpak.) No display is needed for `--help`.
+EOF

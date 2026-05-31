@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Short description shown by `asdf help prusaslicer`.
+set -euo pipefail
+
+cat <<'EOF'
+PrusaSlicer is the open-source G-code generator and 3D printing slicer by Prusa
+Research. This plugin installs official prebuilt releases from GitHub and exposes
+the command-line executable as `prusa-slicer`.
+
+Platforms:
+  * macOS (universal: Apple Silicon and Intel) - all releases.
+  * Linux x86_64 - releases up to 2.8.1 (AppImage; 2.9.0+ is Linux/Flatpak-only
+    upstream and is not available through GitHub releases).
+  * Linux arm64 - releases up to 2.7.4 (tarball).
+
+Only final stable versions are listed; prereleases are excluded. PrusaSlicer has
+no --version flag, so verify an install with: prusa-slicer --help
+EOF

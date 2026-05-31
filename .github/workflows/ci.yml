@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dev tools (shellcheck, shfmt, bats, actionlint, just)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v brew >/dev/null 2>&1; then
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          fi
+          brew install shellcheck shfmt bats-core actionlint just
+          printf '%s/bin\n' "$(brew --prefix)" >>"$GITHUB_PATH"
+
+      - name: Format check
+        run: just format-check
+
+      - name: Lint shell
+        run: just lint
+
+      - name: Lint workflows
+        run: just lint-actions
+
+      - name: Unit tests
+        run: just test
+
+  plugin-test:
+    name: plugin-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux binaries are published on GitHub only through 2.8.1; newer
+          # releases are Linux/Flatpak-only upstream, so Linux pins 2.8.1.
+          - os: ubuntu-latest
+            version: "2.8.1"
+          - os: macos-latest
+            version: latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PrusaSlicer Linux runtime libraries
+        if: runner.os == 'Linux'
+        # PrusaSlicer links WebKitGTK and OpenGL, which the Linux AppImage does
+        # not bundle (the reason upstream moved to Flatpak). They must come from
+        # the system even for `--help`, which loads them at process start.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-0 libgl1 libegl1
+
+      - name: asdf plugin test
+        uses: asdf-vm/actions/plugin-test@v4
+        with:
+          command: prusa-slicer --help
+          version: ${{ matrix.version }}
+          # Optional: avoids GitHub API rate limits when listing versions.
+          # Not required for forks; the listing falls back to unauthenticated.
+          github_token: ${{ secrets.GITHUB_TOKEN }}

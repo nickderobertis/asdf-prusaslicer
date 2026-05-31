@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+#
+# Install one PrusaSlicer version into ASDF_INSTALL_PATH and expose a single
+# `prusa-slicer` executable under <install>/bin so asdf can shim it.
+#
+# Per-platform layout:
+#   * macOS  - the universal .dmg is mounted, the .app bundle is copied in, and
+#              bin/prusa-slicer is a relative symlink into the bundle.
+#   * Linux  - the AppImage is extracted with its built-in extractor (no FUSE
+#     (x86_64) required) and bin/prusa-slicer points at the extracted AppRun.
+#   * Linux  - older releases ship a .tar.bz2 tree containing bin/prusa-slicer,
+#     (arm64)  which is unpacked and linked.
+#
+# Nothing is written outside ASDF_INSTALL_PATH except temporary files, which are
+# always cleaned up. No asdf commands are invoked and no shims are reshimmed.
+set -euo pipefail
+
+plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/utils.sh
+. "${plugin_dir}/lib/utils.sh"
+
+EXECUTABLE="prusa-slicer"
+
+[ "${ASDF_INSTALL_TYPE:-version}" = "version" ] ||
+  fail "only released versions are installable; 'ref' installs are not supported"
+
+version="${ASDF_INSTALL_VERSION:?ASDF_INSTALL_VERSION is required}"
+install_path="${ASDF_INSTALL_PATH:?ASDF_INSTALL_PATH is required}"
+
+os="$(prusaslicer_current_os)" || fail "unsupported operating system: $(uname -s) (supported: Linux, macOS)"
+arch="$(prusaslicer_current_arch)" || fail "unsupported architecture: $(uname -m) (supported: x86_64, arm64)"
+
+# Scratch state cleaned up on any exit.
+mount_point=""
+scratch_dir=""
+
+cleanup() {
+  if [ -n "${mount_point}" ] && [ -d "${mount_point}" ]; then
+    hdiutil detach -quiet "${mount_point}" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${scratch_dir}" ]; then
+    rm -rf "${scratch_dir}"
+  fi
+  # Return success so the trap never becomes the script's exit status when it
+  # ends normally. An explicit `exit 1` from `fail` is preserved through traps.
+  return 0
+}
+trap cleanup EXIT
+
+# Obtain the artifact: reuse what bin/download placed in ASDF_DOWNLOAD_PATH when
+# available, otherwise fetch it directly so the script also works standalone.
+artifact="$(prusaslicer_locate_artifact "${ASDF_DOWNLOAD_PATH:-}" || true)"
+if [ -z "${artifact}" ]; then
+  url="$(prusaslicer_resolve_asset_url "${version}" "${os}" "${arch}" 2>/dev/null || true)"
+  [ -n "${url}" ] || fail "no PrusaSlicer ${version} build for ${os}/${arch}; see: asdf list all prusaslicer"
+  scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/asdf-prusaslicer.XXXXXX")"
+  artifact="${scratch_dir}/$(basename "${url}")"
+  prusaslicer_download_to "${url}" "${artifact}" || fail "failed to download ${url}"
+fi
+
+kind="$(prusaslicer_artifact_kind "${artifact}")" ||
+  fail "unrecognized artifact type: ${artifact}"
+
+# Create a relative symlink under <install>/bin so the tree stays relocatable.
+link_executable() {
+  _target_rel="$1"
+  mkdir -p "${install_path}/bin"
+  ln -sf "${_target_rel}" "${install_path}/bin/${EXECUTABLE}"
+}
+
+install_macos_dmg() {
+  mount_point="$(mktemp -d "${TMPDIR:-/tmp}/asdf-prusaslicer-mnt.XXXXXX")"
+  hdiutil attach -nobrowse -noverify -noautoopen -mountpoint "${mount_point}" "${artifact}" >/dev/null ||
+    fail "failed to mount ${artifact}"
+
+  # The .app sits at the volume root in older releases and inside an "Original
+  # Prusa Drivers" folder in 2.9.x, so search a few levels and prefer the slicer.
+  _app="$(find "${mount_point}" -maxdepth 3 -type d -name 'PrusaSlicer.app' | head -n 1)"
+  [ -n "${_app}" ] || _app="$(find "${mount_point}" -maxdepth 3 -type d -name '*.app' | head -n 1)"
+  [ -n "${_app}" ] || fail "no .app bundle found inside ${artifact}"
+
+  mkdir -p "${install_path}"
+  cp -R "${_app}" "${install_path}/" || fail "failed to copy $(basename "${_app}") into ${install_path}"
+
+  _app_name="$(basename "${_app}")"
+  # The main binary inside the bundle matches the bundle name; fall back to the
+  # first executable in Contents/MacOS if upstream ever renames it.
+  _bin="${install_path}/${_app_name}/Contents/MacOS/${_app_name%.app}"
+  if [ ! -x "${_bin}" ]; then
+    _bin="$(find "${install_path}/${_app_name}/Contents/MacOS" -maxdepth 1 -type f -perm -111 | head -n 1)"
+  fi
+  [ -n "${_bin}" ] && [ -x "${_bin}" ] || fail "no executable found in ${_app_name}/Contents/MacOS"
+
+  link_executable "../${_app_name}/Contents/MacOS/$(basename "${_bin}")"
+}
+
+install_linux_appimage() {
+  scratch_dir="${scratch_dir:-$(mktemp -d "${TMPDIR:-/tmp}/asdf-prusaslicer.XXXXXX")}"
+  _work="${scratch_dir}/extract"
+  mkdir -p "${_work}"
+  cp "${artifact}" "${_work}/image.AppImage"
+  chmod +x "${_work}/image.AppImage"
+
+  # --appimage-extract is handled by the AppImage runtime itself and needs no
+  # FUSE, which makes it reliable on minimal CI runners.
+  (cd "${_work}" && ./image.AppImage --appimage-extract >/dev/null) ||
+    fail "failed to extract ${artifact}"
+  [ -d "${_work}/squashfs-root" ] || fail "AppImage extraction produced no squashfs-root"
+
+  mkdir -p "${install_path}"
+  rm -rf "${install_path}/squashfs-root"
+  mv "${_work}/squashfs-root" "${install_path}/squashfs-root"
+
+  [ -x "${install_path}/squashfs-root/AppRun" ] || fail "extracted AppImage has no runnable AppRun"
+
+  # Expose the executable through a small wrapper rather than a bare symlink to
+  # AppRun. AppRun derives the bundle location from its own path, and different
+  # AppRun implementations disagree on whether that path is resolved through a
+  # symlink. Exporting APPDIR explicitly makes the bundled libraries resolve
+  # regardless, and keeps the install directory relocatable.
+  mkdir -p "${install_path}/bin"
+  cat >"${install_path}/bin/${EXECUTABLE}" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd -- "$(dirname -- "$0")/../squashfs-root" && pwd)"
+export APPDIR="${here}"
+exec "${here}/AppRun" "$@"
+WRAPPER
+  chmod +x "${install_path}/bin/${EXECUTABLE}"
+}
+
+install_linux_tarball() {
+  mkdir -p "${install_path}"
+  # Pipe through bzip2 rather than relying on `tar -j`, which is not universal.
+  bzip2 -dc "${artifact}" | tar -xf - -C "${install_path}" ||
+    fail "failed to extract ${artifact}"
+
+  _bin="$(find "${install_path}" -maxdepth 3 -type f -name "${EXECUTABLE}" -perm -111 | head -n 1)"
+  [ -n "${_bin}" ] || fail "no ${EXECUTABLE} executable found inside ${artifact}"
+  link_executable "../${_bin#"${install_path}"/}"
+}
+
+case "${kind}" in
+  dmg) install_macos_dmg ;;
+  appimage) install_linux_appimage ;;
+  tarball) install_linux_tarball ;;
+esac
+
+# Confirm the installed command actually runs. PrusaSlicer has no --version
+# flag; --help prints the build id and exits 0 without opening a display
+# (it sets the CLI to non-GUI mode), which is the reliable headless check.
+# Capture the output so a failure reports the real cause (e.g. a missing shared
+# library) instead of a bare non-zero exit.
+if ! _verify_out="$("${install_path}/bin/${EXECUTABLE}" --help 2>&1)"; then
+  fail "installed ${EXECUTABLE} failed to run; the install is incomplete:
+$(printf '%s\n' "${_verify_out}" | tail -n 8)"
+fi

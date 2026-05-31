@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+# Relevant links, shown by `asdf help prusaslicer`.
+set -euo pipefail
+
+cat <<'EOF'
+PrusaSlicer project:   https://github.com/prusa3d/PrusaSlicer
+Releases:              https://github.com/prusa3d/PrusaSlicer/releases
+Documentation:         https://help.prusa3d.com/category/prusaslicer_204
+Command-line help:     prusa-slicer --help
+Plugin repository:     https://github.com/nickderobertis/asdf-prusaslicer
+EOF
