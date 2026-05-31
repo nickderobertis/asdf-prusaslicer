@@ -25,7 +25,10 @@ PrusaSlicer has no `--version` flag; verify an install with `prusa-slicer --help
 
 - `asdf`, plus `bash` and `curl`.
 - macOS: `hdiutil` (ships with macOS).
-- Linux: `bzip2` and `tar` (for `.tar.bz2` releases).
+- Linux: `bzip2` and `tar` (for `.tar.bz2` releases), plus the WebKitGTK and
+  OpenGL system libraries PrusaSlicer links against (not bundled in the
+  AppImage). On Debian/Ubuntu:
+  `sudo apt-get install libwebkit2gtk-4.1-0 libgl1 libegl1`.
 
 ## Install the plugin
 
@@ -87,6 +90,10 @@ fallback.
   `asdf install` to fetch again.
 - **Missing build dependencies** — none: the plugin installs prebuilt binaries
   and never compiles from source.
+- **Linux: `error while loading shared libraries: libwebkit2gtk-4.1.so.0`** —
+  install the WebKitGTK/OpenGL runtime libraries PrusaSlicer needs (not bundled
+  in the AppImage): `sudo apt-get install libwebkit2gtk-4.1-0 libgl1 libegl1`,
+  or the equivalent for your distribution.
 - **`command not found: prusa-slicer` / stale shim** — ensure the version is
   selected (`asdf current prusaslicer`) and your shell has asdf's shims on
   `PATH`. Run `asdf reshim prusaslicer` if a shim is missing.

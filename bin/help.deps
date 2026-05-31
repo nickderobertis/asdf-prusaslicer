@@ -13,8 +13,10 @@ Tools used by the plugin scripts:
 
 Runtime libraries:
   * macOS:  none beyond the system; the .app bundle is self-contained.
-  * Linux:  AppImage and tarball builds bundle their own GTK/wxWidgets/WebKit
-            libraries. Running the graphical interface additionally needs the
-            usual desktop X11/OpenGL libraries provided by your distribution.
-            `prusa-slicer --help` runs without a display.
+  * Linux:  the AppImage/tarball builds bundle most libraries but rely on the
+            system to provide WebKitGTK and OpenGL. These load at process start,
+            so they are required even for `--help`. On Debian/Ubuntu:
+              sudo apt-get install libwebkit2gtk-4.1-0 libgl1 libegl1
+            (This unbundled WebKit dependency is why upstream moved Linux
+            distribution to Flatpak.) No display is needed for `--help`.
 EOF
