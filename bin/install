@@ -113,9 +113,21 @@ install_linux_appimage() {
   mv "${_work}/squashfs-root" "${install_path}/squashfs-root"
 
   [ -x "${install_path}/squashfs-root/AppRun" ] || fail "extracted AppImage has no runnable AppRun"
-  # AppRun sets APPDIR/LD_LIBRARY_PATH from its own resolved location, so the
-  # bundled libraries are found even when invoked through the shim symlink.
-  link_executable "../squashfs-root/AppRun"
+
+  # Expose the executable through a small wrapper rather than a bare symlink to
+  # AppRun. AppRun derives the bundle location from its own path, and different
+  # AppRun implementations disagree on whether that path is resolved through a
+  # symlink. Exporting APPDIR explicitly makes the bundled libraries resolve
+  # regardless, and keeps the install directory relocatable.
+  mkdir -p "${install_path}/bin"
+  cat >"${install_path}/bin/${EXECUTABLE}" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd -- "$(dirname -- "$0")/../squashfs-root" && pwd)"
+export APPDIR="${here}"
+exec "${here}/AppRun" "$@"
+WRAPPER
+  chmod +x "${install_path}/bin/${EXECUTABLE}"
 }
 
 install_linux_tarball() {
@@ -138,5 +150,9 @@ esac
 # Confirm the installed command actually runs. PrusaSlicer has no --version
 # flag; --help prints the build id and exits 0 without opening a display
 # (it sets the CLI to non-GUI mode), which is the reliable headless check.
-"${install_path}/bin/${EXECUTABLE}" --help >/dev/null 2>&1 ||
-  fail "installed ${EXECUTABLE} failed to run; the install is incomplete"
+# Capture the output so a failure reports the real cause (e.g. a missing shared
+# library) instead of a bare non-zero exit.
+if ! _verify_out="$("${install_path}/bin/${EXECUTABLE}" --help 2>&1)"; then
+  fail "installed ${EXECUTABLE} failed to run; the install is incomplete:
+$(printf '%s\n' "${_verify_out}" | tail -n 8)"
+fi
