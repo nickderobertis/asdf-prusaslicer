@@ -1,0 +1,4 @@
+# Follow `source`/`.` directives so the helpers in lib/utils.sh are analysed in
+# the context of each bin/ script. The source path is supplied per-script with a
+# `# shellcheck source-path=SCRIPTDIR/..` directive.
+external-sources=true

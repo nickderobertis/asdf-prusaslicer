@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# Runtime dependencies, shown by `asdf help prusaslicer`.
+set -euo pipefail
+
+cat <<'EOF'
+This plugin installs prebuilt binaries; no compiler or source build is required.
+
+Tools used by the plugin scripts:
+  * bash, curl, find, grep, sed, sort  (all platforms)
+  * macOS:  hdiutil                     (mount the .dmg; ships with macOS)
+  * Linux:  bzip2, tar                  (unpack tarball releases)
+
+Runtime libraries:
+  * macOS:  none beyond the system; the .app bundle is self-contained.
+  * Linux:  AppImage and tarball builds bundle their own GTK/wxWidgets/WebKit
+            libraries. Running the graphical interface additionally needs the
+            usual desktop X11/OpenGL libraries provided by your distribution.
+            `prusa-slicer --help` runs without a display.
+EOF

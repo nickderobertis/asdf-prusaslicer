@@ -1,0 +1,27 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Shell scripts. shfmt is invoked explicitly as `shfmt -i 2 -ci` (see justfile),
+# which is the authority for formatting; the keys here keep editors consistent.
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+
+# Bats test files are bash-like but contain `@test` syntax shfmt cannot parse,
+# so they are formatted by hand to the same indentation.
+[*.bats]
+indent_style = space
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.md]
+trim_trailing_whitespace = false

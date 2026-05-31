@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# Print exactly one version: the newest stable PrusaSlicer release. An optional
+# query argument restricts the result to versions whose dotted prefix matches
+# (e.g. `2.8` -> `2.8.1`). Exits non-zero with a concise message when nothing
+# matches.
+set -euo pipefail
+
+plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/utils.sh
+. "${plugin_dir}/lib/utils.sh"
+
+query="${1:-}"
+
+match="$(prusaslicer_list_all_versions | prusaslicer_pick_latest "${query}" || true)"
+[ -n "${match}" ] ||
+  fail "no stable PrusaSlicer version matching '${query:-*}' (check connectivity or the query)"
+
+printf '%s\n' "${match}"
