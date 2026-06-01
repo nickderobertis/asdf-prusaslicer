@@ -53,7 +53,7 @@ trap cleanup EXIT
 artifact="$(prusaslicer_locate_artifact "${ASDF_DOWNLOAD_PATH:-}" || true)"
 if [ -z "${artifact}" ]; then
   url="$(prusaslicer_resolve_asset_url "${version}" "${os}" "${arch}" 2>/dev/null || true)"
-  [ -n "${url}" ] || fail "no PrusaSlicer ${version} build for ${os}/${arch}; see: asdf list all prusaslicer"
+  [ -n "${url}" ] || fail "$(prusaslicer_unavailable_advice "${version}" "${os}" "${arch}")"
   scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/asdf-prusaslicer.XXXXXX")"
   artifact="${scratch_dir}/$(basename "${url}")"
   prusaslicer_download_to "${url}" "${artifact}" || fail "failed to download ${url}"
@@ -153,6 +153,13 @@ esac
 # Capture the output so a failure reports the real cause (e.g. a missing shared
 # library) instead of a bare non-zero exit.
 if ! _verify_out="$("${install_path}/bin/${EXECUTABLE}" --help 2>&1)"; then
+  # A missing unbundled system library (WebKitGTK/OpenGL on Linux) is the most
+  # common failure; turn its cryptic loader error into the exact install command.
+  _advice="$(printf '%s\n' "${_verify_out}" | prusaslicer_missing_lib_advice || true)"
+  if [ -n "${_advice}" ]; then
+    fail "installed ${EXECUTABLE} could not start; a required system library is missing.
+${_advice}"
+  fi
   fail "installed ${EXECUTABLE} failed to run; the install is incomplete:
 $(printf '%s\n' "${_verify_out}" | tail -n 8)"
 fi

@@ -181,6 +181,86 @@ prusaslicer_artifact_kind() {
   esac
 }
 
+# Explain why a version has no installable artifact for a platform, naming the
+# newest version the plugin can install there. Upstream stopped publishing Linux
+# binaries on GitHub after 2.8.1 (x86_64) and 2.7.4 (arm64) and moved Linux
+# distribution to Flatpak, so newer versions resolve to no asset on Linux. This
+# turns an empty asset resolution into an actionable message rather than a bare
+# "no build" error. Pure: encodes documented upstream availability, no network.
+prusaslicer_unavailable_advice() {
+  _version="$1"
+  _os="$2"
+  _arch="$3"
+  case "${_os}:${_arch}" in
+    linux:x64)
+      printf 'no PrusaSlicer %s build for linux/x86_64. Upstream ships Linux x86_64 binaries on GitHub only through 2.8.1 (2.9.0+ is distributed for Linux via Flatpak), so 2.8.1 is the newest version installable here.' "${_version}"
+      ;;
+    linux:arm64)
+      printf 'no PrusaSlicer %s build for linux/arm64. Upstream last shipped a Linux arm64 binary for 2.7.4, so that is the newest version installable here.' "${_version}"
+      ;;
+    macos:*)
+      printf 'no PrusaSlicer %s build found in the macOS release assets.' "${_version}"
+      ;;
+    *)
+      printf 'no PrusaSlicer %s build for %s/%s.' "${_version}" "${_os}" "${_arch}"
+      ;;
+  esac
+  printf '\nList installable versions with: asdf list all prusaslicer'
+}
+
+# ---------------------------------------------------------------------------
+# Linux runtime libraries (pure)
+# ---------------------------------------------------------------------------
+
+# The Linux AppImage/tarball builds bundle most of their libraries but link
+# against a few the system must provide (WebKitGTK and OpenGL). These resolve at
+# process start, so a missing one makes even `--help` fail with a dynamic-loader
+# error. Map such a soname to the packages that provide it on the common
+# distributions. Returns non-zero for an unrecognized soname.
+prusaslicer_lib_package_hint() {
+  case "$1" in
+    libwebkit2gtk-4.1.so*)
+      printf 'apt: libwebkit2gtk-4.1-0 | dnf: webkit2gtk4.1 | pacman: webkit2gtk-4.1\n'
+      ;;
+    libwebkit2gtk-4.0.so*)
+      printf 'apt: libwebkit2gtk-4.0-37 | dnf: webkit2gtk3 | pacman: webkit2gtk\n'
+      ;;
+    libGL.so*)
+      printf 'apt: libgl1 | dnf: mesa-libGL | pacman: libglvnd\n'
+      ;;
+    libEGL.so*)
+      printf 'apt: libegl1 | dnf: mesa-libEGL | pacman: libglvnd\n'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Turn dynamic-loader output (read from stdin) into an actionable message naming
+# the missing PrusaSlicer runtime libraries and the packages that provide them.
+# Prints nothing and returns non-zero when the output shows no recognizable
+# "cannot open shared object" error, so callers can fall back to the raw output.
+prusaslicer_missing_lib_advice() {
+  _libs="$(grep -oE '[A-Za-z0-9._+-]+\.so[0-9.]*: cannot open shared object' |
+    sed -E 's/: cannot open shared object//' |
+    sort -u)"
+  [ -n "${_libs}" ] || return 1
+  printf 'PrusaSlicer needs system libraries the Linux build does not bundle:\n'
+  _old_ifs="$IFS"
+  IFS='
+'
+  for _lib in ${_libs}; do
+    _hint="$(prusaslicer_lib_package_hint "${_lib}" || true)"
+    if [ -n "${_hint}" ]; then
+      printf '  %s  ->  %s\n' "${_lib}" "${_hint}"
+    else
+      printf '  %s  -> install the package that provides this library\n' "${_lib}"
+    fi
+  done
+  IFS="${_old_ifs}"
+  printf 'On Debian/Ubuntu the usual set is:\n'
+  printf '  sudo apt-get install libwebkit2gtk-4.1-0 libgl1 libegl1\n'
+}
+
 # ---------------------------------------------------------------------------
 # Filesystem (no network)
 # ---------------------------------------------------------------------------

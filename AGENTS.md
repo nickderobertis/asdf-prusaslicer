@@ -88,6 +88,16 @@ Only final `MAJOR.MINOR.PATCH` releases are installable. Prereleases
 (`-alpha`/`-beta`/`-rc`) are excluded from both `list-all` and `latest-stable`.
 This policy is intentional and documented in user-facing help.
 
+## Platform availability
+
+Upstream binary coverage on GitHub is uneven and capped: macOS ships a universal
+`.dmg` for every release; Linux x86_64 ships an AppImage only through 2.8.1;
+Linux arm64 ships a `.tar.bz2` only through 2.7.4. Newer Linux versions are
+distributed via Flatpak, which this plugin intentionally does not use (it would
+add a system dependency and could not honour exact-version installs). When a
+requested version has no asset for the current platform, fail with guidance that
+names the newest version installable there, not a bare "no build" error.
+
 ## Download and checksums
 
 Upstream publishes no per-asset checksums, so none can be verified; this is
@@ -102,6 +112,13 @@ are always cleaned up. It must not modify shell startup files, install system
 packages, or write anywhere else. The installed executable is verified to run
 before the script returns (`prusa-slicer --help`; PrusaSlicer has no `--version`
 flag and `--help` runs without a display).
+
+A Linux install can still fail at that verification because the build links a
+few system libraries it does not bundle (WebKitGTK/OpenGL), which load at process
+start. When the loader reports a missing library, map the soname to the packages
+that provide it across common distributions and fail with that exact install
+command, so the requirement is discoverable from the error. The plugin reports
+the command; it never installs the packages itself.
 
 ## Quality gate
 

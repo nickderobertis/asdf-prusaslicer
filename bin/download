@@ -25,14 +25,7 @@ arch="$(prusaslicer_current_arch)" || fail "unsupported architecture: $(uname -m
 
 url="$(prusaslicer_resolve_asset_url "${version}" "${os}" "${arch}" 2>/dev/null || true)"
 if [ -z "${url}" ]; then
-  case "${os}" in
-    linux)
-      fail "no PrusaSlicer ${version} build for linux/${arch}. Upstream ships Linux binaries on GitHub only through 2.8.1 (x86_64) and 2.7.4 (arm64); 2.9.0+ is distributed for Linux via Flatpak. Choose a supported version: asdf list all prusaslicer"
-      ;;
-    *)
-      fail "no PrusaSlicer ${version} build for ${os}/${arch}"
-      ;;
-  esac
+  fail "$(prusaslicer_unavailable_advice "${version}" "${os}" "${arch}")"
 fi
 
 mkdir -p "${download_path}"
