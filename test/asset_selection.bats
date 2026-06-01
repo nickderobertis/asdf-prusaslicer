@@ -109,3 +109,30 @@ select_from() { printf '%s\n' "$2" | prusaslicer_select_asset_url "$3" "$4"; }
   [ "${status}" -ne 0 ]
   [ -z "${output}" ]
 }
+
+# --- Unavailable-version guidance -----------------------------------------
+# When a version has no asset for the platform, the failure must explain the
+# upstream cap and name the newest installable version, not just say "no build".
+
+@test "unavailable_advice explains the Linux x86_64 cap at 2.8.1" {
+  run prusaslicer_unavailable_advice 2.9.5 linux x64
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"2.9.5"* ]]
+  [[ "${output}" == *"2.8.1 is the newest version installable here"* ]]
+  [[ "${output}" == *"Flatpak"* ]]
+  [[ "${output}" == *"asdf list all prusaslicer"* ]]
+}
+
+@test "unavailable_advice explains the Linux arm64 cap at 2.7.4" {
+  run prusaslicer_unavailable_advice 2.8.1 linux arm64
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"2.7.4"* ]]
+  [[ "${output}" == *"newest version installable here"* ]]
+}
+
+@test "unavailable_advice falls back for other platforms" {
+  run prusaslicer_unavailable_advice 9.9.9 macos arm64
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"9.9.9"* ]]
+  [[ "${output}" == *"asdf list all prusaslicer"* ]]
+}
