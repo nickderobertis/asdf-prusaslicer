@@ -87,16 +87,32 @@ test:
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    # asdf plugin test clones the committed state at this gitref. Use the branch
-    # name when on one; fall back to the commit SHA in detached HEAD (CI PR
-    # checkouts), where rev-parse --abbrev-ref reports a bare "HEAD".
-    ref="$(git rev-parse --abbrev-ref HEAD)"
-    [ "${ref}" = "HEAD" ] && ref="$(git rev-parse HEAD)"
+    # `asdf plugin test` clones the plugin from <giturl> at <gitref> with
+    # `git clone --branch`, so the ref must be a branch (or tag) that exists on
+    # the cloned remote -- a bare commit SHA is NOT fetchable this way.
+    #
+    # On CI we mirror the official asdf-vm/actions/plugin-test job: clone the
+    # GitHub remote and use the PR source branch (GITHUB_HEAD_REF) or, on push,
+    # the branch name (GITHUB_REF_NAME). In a pull_request gate the checkout is a
+    # detached-HEAD merge ref, so the branch is not a local ref and `${PWD}`
+    # cannot serve it; cloning the remote by branch name is what works.
+    #
+    # Locally (no GitHub env) we clone the working copy and use its current
+    # branch, falling back to the commit SHA only in detached HEAD, where a
+    # local clone can still resolve the SHA.
+    if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+      giturl="https://github.com/${GITHUB_REPOSITORY}"
+      ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+    else
+      giturl="${PWD}"
+      ref="$(git rev-parse --abbrev-ref HEAD)"
+      [ "${ref}" = "HEAD" ] && ref="$(git rev-parse HEAD)"
+    fi
     case "$(uname -s)" in
       Linux) version="2.8.1" ;;
       *) version="latest" ;;
     esac
-    asdf plugin test prusaslicer "${PWD}" "prusa-slicer --help" \
+    asdf plugin test prusaslicer "${giturl}" "prusa-slicer --help" \
       --asdf-plugin-gitref "${ref}" --asdf-tool-version "${version}"
 
 # Full quality gate: format check, shell lint, actions lint, unit tests, plugin test.
