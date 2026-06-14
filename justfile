@@ -37,6 +37,28 @@ bootstrap:
     done <.tool-versions
     asdf install
 
+# Upgrade pinned developer tools in .tool-versions to latest, then re-run the gate.
+upgrade:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v asdf >/dev/null 2>&1; then
+      echo "asdf not found. Install asdf to upgrade the pinned tools (see CONTRIBUTING.md)." >&2
+      exit 1
+    fi
+    tmp="$(mktemp)"
+    trap 'rm -f "${tmp}"' EXIT
+    while read -r tool _version; do
+      [ -n "${tool}" ] || continue
+      asdf plugin list 2>/dev/null | grep -qx "${tool}" || asdf plugin add "${tool}"
+      asdf plugin update "${tool}" >/dev/null 2>&1 || true
+      latest="$(asdf latest "${tool}")"
+      printf '%s %s\n' "${tool}" "${latest}" >>"${tmp}"
+    done <.tool-versions
+    mv "${tmp}" .tool-versions
+    trap - EXIT
+    asdf install
+    just check
+
 # Format shell scripts in place.
 format:
     shfmt {{ shfmt_flags }} -w {{ shfmt_paths }}
@@ -65,7 +87,11 @@ test:
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
+    # asdf plugin test clones the committed state at this gitref. Use the branch
+    # name when on one; fall back to the commit SHA in detached HEAD (CI PR
+    # checkouts), where rev-parse --abbrev-ref reports a bare "HEAD".
     ref="$(git rev-parse --abbrev-ref HEAD)"
+    [ "${ref}" = "HEAD" ] && ref="$(git rev-parse HEAD)"
     case "$(uname -s)" in
       Linux) version="2.8.1" ;;
       *) version="latest" ;;
