@@ -37,6 +37,28 @@ bootstrap:
     done <.tool-versions
     asdf install
 
+# Upgrade pinned developer tools in .tool-versions to latest, then re-run the gate.
+upgrade:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v asdf >/dev/null 2>&1; then
+      echo "asdf not found. Install asdf to upgrade the pinned tools (see CONTRIBUTING.md)." >&2
+      exit 1
+    fi
+    tmp="$(mktemp)"
+    trap 'rm -f "${tmp}"' EXIT
+    while read -r tool _version; do
+      [ -n "${tool}" ] || continue
+      asdf plugin list 2>/dev/null | grep -qx "${tool}" || asdf plugin add "${tool}"
+      asdf plugin update "${tool}" >/dev/null 2>&1 || true
+      latest="$(asdf latest "${tool}")"
+      printf '%s %s\n' "${tool}" "${latest}" >>"${tmp}"
+    done <.tool-versions
+    mv "${tmp}" .tool-versions
+    trap - EXIT
+    asdf install
+    just check
+
 # Format shell scripts in place.
 format:
     shfmt {{ shfmt_flags }} -w {{ shfmt_paths }}
@@ -65,12 +87,32 @@ test:
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    ref="$(git rev-parse --abbrev-ref HEAD)"
+    # `asdf plugin test` clones the plugin from <giturl> at <gitref> with
+    # `git clone --branch`, so the ref must be a branch (or tag) that exists on
+    # the cloned remote -- a bare commit SHA is NOT fetchable this way.
+    #
+    # On CI we mirror the official asdf-vm/actions/plugin-test job: clone the
+    # GitHub remote and use the PR source branch (GITHUB_HEAD_REF) or, on push,
+    # the branch name (GITHUB_REF_NAME). In a pull_request gate the checkout is a
+    # detached-HEAD merge ref, so the branch is not a local ref and `${PWD}`
+    # cannot serve it; cloning the remote by branch name is what works.
+    #
+    # Locally (no GitHub env) we clone the working copy and use its current
+    # branch, falling back to the commit SHA only in detached HEAD, where a
+    # local clone can still resolve the SHA.
+    if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+      giturl="https://github.com/${GITHUB_REPOSITORY}"
+      ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+    else
+      giturl="${PWD}"
+      ref="$(git rev-parse --abbrev-ref HEAD)"
+      [ "${ref}" = "HEAD" ] && ref="$(git rev-parse HEAD)"
+    fi
     case "$(uname -s)" in
       Linux) version="2.8.1" ;;
       *) version="latest" ;;
     esac
-    asdf plugin test prusaslicer "${PWD}" "prusa-slicer --help" \
+    asdf plugin test prusaslicer "${giturl}" "prusa-slicer --help" \
       --asdf-plugin-gitref "${ref}" --asdf-tool-version "${version}"
 
 # Full quality gate: format check, shell lint, actions lint, unit tests, plugin test.

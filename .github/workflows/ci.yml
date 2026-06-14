@@ -13,37 +13,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: quality (${{ matrix.os }})
+  check:
+    name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
+      # Full history so `asdf plugin test` (run by `just check`) can clone the
+      # committed plugin state at the PR head commit.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Install dev tools (shellcheck, shfmt, bats, actionlint, just)
-        shell: bash
+      - name: Install PrusaSlicer Linux runtime libraries
+        if: runner.os == 'Linux'
+        # PrusaSlicer links WebKitGTK and OpenGL, which the Linux AppImage does
+        # not bundle (the reason upstream moved to Flatpak). They must come from
+        # the system even for `--help`, which loads them at process start. The
+        # plugin test inside `just check` runs the installed binary, so the gate
+        # needs them too.
         run: |
-          set -euo pipefail
-          if ! command -v brew >/dev/null 2>&1; then
-            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          fi
-          brew install shellcheck shfmt bats-core actionlint just
-          printf '%s/bin\n' "$(brew --prefix)" >>"$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-0 libgl1 libegl1
 
-      - name: Format check
-        run: just format-check
+      # Install asdf and the developer tools pinned in .tool-versions (just,
+      # shellcheck, shfmt, bats, actionlint), so `just` is available to run the
+      # gate and `asdf plugin test` is available to `just check`.
+      - name: Set up asdf and pinned tools
+        uses: asdf-vm/actions/install@v4
 
-      - name: Lint shell
-        run: just lint
+      - name: Bootstrap
+        run: just bootstrap
 
-      - name: Lint workflows
-        run: just lint-actions
-
-      - name: Unit tests
-        run: just test
+      - name: Gate
+        run: just check
+        env:
+          # Avoids GitHub API rate limits when the plugin lists versions during
+          # `asdf plugin test`. Not required for forks; listing falls back to
+          # unauthenticated.
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   plugin-test:
     name: plugin-test (${{ matrix.os }})

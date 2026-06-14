@@ -10,6 +10,32 @@ PrusaSlicer releases from GitHub and exposes the `prusa-slicer` executable. It i
 a shell plugin, not a packaged application — there is no build artifact to ship
 and no language runtime to embed.
 
+## Stack and composition
+
+This repository was composed from the create-repo skill's reference pieces:
+
+- **Product shape:** `shapes/asdf-plugin.md` — the deliverable is the `bin/`
+  scripts asdf invokes to list, download, and install versions, with the script
+  contract, version/stable/download policy, and host-tool integration testing
+  that shape prescribes.
+- **Language:** `languages/bash.md` — POSIX-friendly shell with `shellcheck` and
+  `shfmt` enforced and `bats` for unit behavior, on the Bash-3.2 portability
+  floor that macOS sets.
+- **Cross-cutting:** `ci.md` (always) — clean checkout, then `just bootstrap`
+  and `just check` on the real OS matrix, plus the separate end-user
+  install-path job that proves `asdf plugin add` the way users run it.
+
+Excluded, deliberately:
+
+- **`monorepo.md`** — this is a single deliverable (one plugin, one language),
+  so the monorepo orchestration layer does not apply.
+- **Intersection references** — there is no `bash` x `asdf-plugin` intersection
+  reference; the shape already carries the bash-specific plugin guidance, so no
+  intersection is pulled in or needed.
+- **Other shapes and languages** (`cli.md`, `library.md`, `web-app.md`,
+  `python.md`, `rust.md`, `typescript.md`, and the rest) — not the artifact this
+  repo ships.
+
 ## Architecture
 
 - `bin/` — the asdf plugin scripts (the only entry points asdf calls).
@@ -123,8 +149,43 @@ the command; it never installs the packages itself.
 ## Quality gate
 
 `just check` is the full gate: format check, shell lint, workflow lint, unit
-tests, and `asdf plugin test`. Continuous integration runs the same checks on
-Linux and macOS.
+tests, and `asdf plugin test` (the `plugin-test` recipe). Continuous integration
+runs `just bootstrap` then the same `just check` on Linux and macOS, in a job
+named `check`; a separate install-path job exercises the end-user
+`asdf plugin add` path via `asdf-vm/actions/plugin-test`.
+
+`just upgrade` bumps every developer tool pinned in `.tool-versions` to its
+latest version, installs it, and re-runs `just check`, so a toolchain upgrade is
+never merged unverified.
+
+### End-to-end decision
+
+The end-to-end tier is `asdf plugin test`, wired into `just check` as the
+`plugin-test` recipe and run in CI on both Linux and macOS. It is the real
+host-tool harness: asdf clones the committed plugin, runs `list-all` /
+`latest-stable` / `download` / `install` against live upstream releases, and
+then runs the installed `prusa-slicer --help` to prove the binary actually
+launches — the exact journey a user installing a version takes. This is the
+deliberate e2e for this repo; there is no separate `e2e/` tree because driving
+the plugin through asdf itself is a truer end-to-end than any reimplementation
+would be. The Linux job pins version 2.8.1 (the last release with a Linux
+binary upstream) and macOS uses `latest`, so the happy path is covered on both
+platforms; the unsupported-platform and missing-runtime-library failure paths
+are covered by the offline `bats` unit tests.
+
+### Coverage decision
+
+Line-coverage tooling for shell (`kcov`, `bashcov`) is not enforced in the gate.
+Doing so would require running the `bin/` scripts under a coverage wrapper, but
+the only honest exercise of those scripts is the networked `asdf plugin test`
+e2e, which is intentionally kept out of the deterministic unit run. The pure,
+unit-testable logic in `lib/utils.sh` is instead held to full behavioral
+coverage by convention (see Testing: every helper added to `lib/` gets a test,
+with fixtures from real release data), and the `bin/` entry points are covered
+end-to-end by `asdf plugin test`. This is a deliberate, documented lowering of
+the default 95%-line-coverage bar for this shell plugin, not a silent omission;
+restore numeric coverage by wrapping the `bats` run in `kcov` if the tooling
+becomes reliable across the macOS/Linux matrix.
 
 ## Fail-or-silent diagnostics
 
