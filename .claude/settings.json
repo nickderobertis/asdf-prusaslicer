@@ -12,7 +12,6 @@
       "Bash(just check)",
       "Bash(just clean)",
       "Bash(just deps)",
-
       "Bash(shellcheck *)",
       "Bash(shfmt *)",
       "Bash(bats *)",
@@ -23,7 +22,6 @@
       "Bash(asdf install)",
       "Bash(direnv status)",
       "Bash(direnv allow)",
-
       "Bash(git status)",
       "Bash(git diff *)",
       "Bash(git log *)",
@@ -38,11 +36,24 @@
       "Bash(git fetch *)",
       "Bash(git pull --ff-only *)",
       "Bash(git push *)",
-
       "Bash(pwd)",
       "Bash(ls *)",
       "Bash(find . -maxdepth *)",
       "Bash(tree *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/session-setup.sh\"",
+            "timeout": 600
+          }
+        ]
+      }
     ]
   }
 }

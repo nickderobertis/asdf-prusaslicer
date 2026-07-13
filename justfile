@@ -149,3 +149,12 @@ debug-resolve version:
     os="$(prusaslicer_current_os)"
     arch="$(prusaslicer_current_arch)"
     prusaslicer_resolve_asset_url "{{ version }}" "${os}" "${arch}"
+
+lint-llm:
+    llmlint
+
+lint-llm-diff:
+    llmlint --diff --diff-base "origin/main"
+
+lint-llm-validate:
+    llmlint validate
